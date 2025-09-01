@@ -37,7 +37,8 @@ CHUNK_SIZE = 1024
 
 MODEL = "models/gemini-2.5-flash-preview-native-audio-dialog"
 
-DEFAULT_MODE = "camera"
+#DEFAULT_MODE = "camera"
+DEFAULT_MODE = "none"
 
 loaded_map = load_env_file()
 

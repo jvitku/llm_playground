@@ -29,6 +29,8 @@ FORMAT = pyaudio.paInt16
 CHUNK_SIZE = 1024
 TARGET_DEV_RE = re.compile(r"usb|pnp|audio", re.I)  # prefer USB-ish devices
 
+loaded_map = load_env_file()
+
 # --------- CLIENT ---------
 client = genai.Client(
     http_options={"api_version": "v1beta"},

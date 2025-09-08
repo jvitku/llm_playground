@@ -216,7 +216,7 @@ class AudioLoop:
                 raise asyncio.CancelledError("User requested exit")
         except asyncio.CancelledError:
             pass
-        except* Exception as EG:
+        except Exception as EG:
             if self.mic_stream:
                 self.mic_stream.close()
             if self.spk_stream:

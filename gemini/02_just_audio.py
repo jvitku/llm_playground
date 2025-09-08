@@ -27,6 +27,14 @@ import argparse
 from google import genai
 from google.genai import types
 
+from pathlib import Path
+import sys
+# add project root (parent of "gemini" dir) to sys.path
+project_root = Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+
 from gemini.load_env import load_env_file
 
 FORMAT = pyaudio.paInt16

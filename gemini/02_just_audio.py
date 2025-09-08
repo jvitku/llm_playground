@@ -79,6 +79,9 @@ class AudioLoop:
         self.send_text_task = None
         self.receive_audio_task = None
         self.play_audio_task = None
+        
+        self.is_ai_speaking = False
+        self.ai_speaking_lock = asyncio.Lock()
 
     async def send_text(self):
         while True:
@@ -112,7 +115,9 @@ class AudioLoop:
             kwargs = {}
         while True:
             data = await asyncio.to_thread(self.audio_stream.read, CHUNK_SIZE, **kwargs)
-            await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
+            # Only send audio data if AI is not currently speaking
+            if not self.is_ai_speaking:
+                await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
 
     async def receive_audio(self):
         "Background task to reads from the websocket and write pcm chunks to the output queue"
@@ -120,11 +125,17 @@ class AudioLoop:
             turn = self.session.receive()
             async for response in turn:
                 if data := response.data:
+                    # Mark that AI is speaking when we receive audio data
+                    if not self.is_ai_speaking:
+                        self.is_ai_speaking = True
                     self.audio_in_queue.put_nowait(data)
                     continue
                 if text := response.text:
                     print(text, end="")
 
+            # Turn is complete, AI finished speaking
+            self.is_ai_speaking = False
+            
             # If you interrupt the model, it sends a turn_complete.
             # For interruptions to work, we need to stop playback.
             # So empty out the audio queue because it may have loaded

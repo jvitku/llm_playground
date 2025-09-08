@@ -21,7 +21,9 @@ if str(project_root) not in sys.path:
 from gemini.load_env import load_env_file
 
 # --------- MODEL CONFIG ---------
-MODEL = "models/gemini-2.5-flash-preview-native-audio-dialog"
+#MODEL = "models/gemini-2.5-flash-preview-native-audio-dialog"
+MODEL = "models/gemini-2.5-flash-exp-native-audio-thinking-dialog"
+
 SEND_SAMPLE_RATE = 16000        # mic -> model
 RECEIVE_SAMPLE_RATE = 24000     # model -> speaker (ideal)
 CHANNELS = 1

@@ -47,7 +47,7 @@ client = genai.Client(
     api_key=os.environ.get("GEMINI_API_KEY"),
 )
 
-
+# voices: Zephyr, Puck, Charon, Kore, Fenrir
 CONFIG = types.LiveConnectConfig(
     response_modalities=[
         "AUDIO",
@@ -55,7 +55,7 @@ CONFIG = types.LiveConnectConfig(
     media_resolution="MEDIA_RESOLUTION_MEDIUM",
     speech_config=types.SpeechConfig(
         voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Zephyr")
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore"),
         )
     ),
     context_window_compression=types.ContextWindowCompressionConfig(
@@ -182,7 +182,9 @@ class AudioLoop:
             self.audio_stream.close()
             traceback.print_exception(EG)
 
-
+"""
+See the https://aistudio.google.com/u/1/live for more information
+"""
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()

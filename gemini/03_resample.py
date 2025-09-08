@@ -4,7 +4,7 @@ Drop-in replacement for your script's audio bits: robust device selection + rate
 Requires: pip install google-genai pillow mss opencv-python pyaudio
 """
 
-import os, asyncio, base64, io, traceback, argparse, re, audioop
+import os, asyncio, base64, io, traceback, argparse, re, time, struct
 import pyaudio
 from typing import Optional, Tuple
 from google import genai
@@ -148,9 +148,90 @@ def _open_output_stream(out_idx: Optional[int]) -> Tuple[pyaudio.Stream, int]:
 def _resample_16bit_mono(raw: bytes, src_rate: int, dst_rate: int) -> bytes:
     if src_rate == dst_rate:
         return raw
-    # audioop.ratecv does linear resampling; state is unnecessary for independent chunks here
-    converted, _ = audioop.ratecv(raw, 2, CHANNELS, src_rate, dst_rate, None)
-    return converted
+    
+    # Convert bytes to list of 16-bit samples
+    sample_count = len(raw) // 2
+    samples = list(struct.unpack(f'<{sample_count}h', raw))
+    
+    # Simple linear resampling
+    ratio = dst_rate / src_rate
+    dst_length = int(len(samples) * ratio)
+    resampled = []
+    
+    for i in range(dst_length):
+        # Map destination index to source index
+        src_index = i / ratio
+        
+        # Simple nearest neighbor interpolation
+        if src_index >= len(samples) - 1:
+            resampled.append(samples[-1])
+        else:
+            # Linear interpolation between two adjacent samples
+            left_idx = int(src_index)
+            right_idx = left_idx + 1
+            frac = src_index - left_idx
+            
+            left_sample = samples[left_idx]
+            right_sample = samples[right_idx] if right_idx < len(samples) else samples[left_idx]
+            
+            interpolated = int(left_sample + frac * (right_sample - left_sample))
+            resampled.append(interpolated)
+    
+    # Convert back to bytes
+    return struct.pack(f'<{len(resampled)}h', *resampled)
+
+def test_audio_recording(in_idx: Optional[int], out_idx: Optional[int], duration: float = 3.0) -> bool:
+    """
+    Record audio for the specified duration, then play it back.
+    Uses the same audio processing pipeline as the LLM session.
+    Returns True if successful, False otherwise.
+    """
+    print(f"\nTesting audio system - recording {duration}s of audio...")
+    
+    try:
+        # Open input stream for recording
+        mic_stream = _open_input_stream(in_idx)
+        recorded_chunks = []
+        
+        # Record audio
+        chunks_per_second = SEND_SAMPLE_RATE // CHUNK_SIZE
+        total_chunks = int(duration * chunks_per_second)
+        
+        print("Recording... speak now!")
+        for i in range(total_chunks):
+            try:
+                data = mic_stream.read(CHUNK_SIZE, exception_on_overflow=False)
+                recorded_chunks.append(data)
+            except Exception as e:
+                print(f"Error during recording: {e}")
+                mic_stream.close()
+                return False
+        
+        mic_stream.close()
+        print("Recording complete!")
+        
+        # Combine all recorded chunks
+        recorded_audio = b''.join(recorded_chunks)
+        
+        # Open output stream for playback
+        spk_stream, spk_rate = _open_output_stream(out_idx)
+        
+        # Resample recorded audio to output rate if necessary
+        playback_audio = _resample_16bit_mono(recorded_audio, SEND_SAMPLE_RATE, spk_rate)
+        
+        print("Playing back recorded audio...")
+        time.sleep(0.5)  # Brief pause before playback
+        
+        # Play back the audio
+        spk_stream.write(playback_audio)
+        spk_stream.close()
+        
+        print("Playback complete! Audio system test successful.\n")
+        return True
+        
+    except Exception as e:
+        print(f"Audio test failed: {e}")
+        return False
 
 # ---------- APP ----------
 class AudioLoop:
@@ -216,6 +297,20 @@ class AudioLoop:
             await asyncio.to_thread(self.spk_stream.write, payload)
 
     async def run(self):
+        # First, test audio recording and playback
+        print("Initializing audio devices...")
+        in_idx, out_idx = await asyncio.to_thread(_pick_io_indices)
+        
+        # Run audio test before starting LLM session
+        audio_test_success = await asyncio.to_thread(test_audio_recording, in_idx, out_idx, 3.0)
+        
+        if not audio_test_success:
+            print("Audio test failed. Please check your microphone and speakers.")
+            return
+        
+        print("Audio test successful! Starting LLM session...")
+        print("Type 'q' to quit the session.\n")
+        
         try:
             async with (client.aio.live.connect(model=MODEL, config=CONFIG) as session, asyncio.TaskGroup() as tg):
                 self.session = session

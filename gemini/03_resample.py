@@ -292,11 +292,27 @@ class AudioLoop:
         self.out_idx: Optional[int] = None
 
     async def send_text(self):
+        import sys
+        
+        # Check if stdin is available (interactive mode)
+        if not sys.stdin.isatty():
+            # Non-interactive mode (startup/service) - just wait indefinitely
+            print("Running in non-interactive mode (audio-only)")
+            await asyncio.Event().wait()
+            return
+        
+        # Interactive mode - allow text input
         while True:
-            text = await asyncio.to_thread(input, "message > ")
-            if text.lower() == "q":
+            try:
+                text = await asyncio.to_thread(input, "message > ")
+                if text.lower() == "q":
+                    break
+                await self.session.send(input=text or ".", end_of_turn=True)
+            except EOFError:
+                # Handle case where stdin becomes unavailable
+                print("Text input no longer available, switching to audio-only mode")
+                await asyncio.Event().wait()
                 break
-            await self.session.send(input=text or ".", end_of_turn=True)
 
     async def send_realtime(self):
         while True:

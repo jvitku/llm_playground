@@ -4,7 +4,7 @@ Drop-in replacement for your script's audio bits: robust device selection + rate
 Requires: pip install google-genai pillow mss opencv-python pyaudio
 """
 
-import os, asyncio, base64, io, traceback, argparse, re, time, struct
+import os, asyncio, base64, io, traceback, argparse, re, time, struct, math
 import pyaudio
 from typing import Optional, Tuple
 from google import genai
@@ -21,8 +21,8 @@ if str(project_root) not in sys.path:
 from gemini.load_env import load_env_file
 
 # --------- MODEL CONFIG ---------
-#MODEL = "models/gemini-2.5-flash-preview-native-audio-dialog"
-MODEL = "models/gemini-2.5-flash-exp-native-audio-thinking-dialog"
+MODEL = "models/gemini-2.5-flash-preview-native-audio-dialog"
+#MODEL = "models/gemini-2.5-flash-exp-native-audio-thinking-dialog"
 
 SEND_SAMPLE_RATE = 16000        # mic -> model
 RECEIVE_SAMPLE_RATE = 24000     # model -> speaker (ideal)
@@ -182,6 +182,47 @@ def _resample_16bit_mono(raw: bytes, src_rate: int, dst_rate: int) -> bytes:
     # Convert back to bytes
     return struct.pack(f'<{len(resampled)}h', *resampled)
 
+def generate_tone(frequency: float, duration: float, sample_rate: int = SEND_SAMPLE_RATE) -> bytes:
+    """Generate a simple sine wave tone."""
+    frames = int(duration * sample_rate)
+    samples = []
+    for i in range(frames):
+        t = i / sample_rate
+        sample = int(32767 * 0.3 * math.sin(2 * math.pi * frequency * t))
+        samples.append(sample)
+    return struct.pack(f'<{len(samples)}h', *samples)
+
+def play_sound_effect(sound_type: str, out_idx: Optional[int] = None):
+    """Play a sound effect using PyAudio."""
+    try:
+        if sound_type == "hello":
+            # Pleasant ascending tone sequence
+            tones = [(440, 0.15), (554, 0.15), (659, 0.2)]
+        elif sound_type == "success":
+            # Success chord - major triad
+            tones = [(523, 0.3), (659, 0.3), (784, 0.3)]
+        else:
+            return
+
+        # Use existing output device selection if not provided
+        if out_idx is None:
+            _, out_idx = _pick_io_indices()
+        
+        # Open output stream
+        spk_stream, spk_rate = _open_output_stream(out_idx)
+        
+        # Generate and play each tone
+        for freq, duration in tones:
+            tone_data = generate_tone(freq, duration)
+            # Resample if needed
+            if spk_rate != SEND_SAMPLE_RATE:
+                tone_data = _resample_16bit_mono(tone_data, SEND_SAMPLE_RATE, spk_rate)
+            spk_stream.write(tone_data)
+        
+        spk_stream.close()
+    except Exception as e:
+        print(f"Could not play {sound_type} sound: {e}")
+
 def test_audio_recording(in_idx: Optional[int], out_idx: Optional[int], duration: float = 3.0) -> bool:
     """
     Record audio for the specified duration, then play it back.
@@ -303,6 +344,10 @@ class AudioLoop:
         print("Initializing audio devices...")
         in_idx, out_idx = await asyncio.to_thread(_pick_io_indices)
         
+        # Play hello sound to indicate script start
+        print("Playing hello sound...")
+        await asyncio.to_thread(play_sound_effect, "hello", out_idx)
+        
         # Run audio test before starting LLM session
         audio_test_success = await asyncio.to_thread(test_audio_recording, in_idx, out_idx, 3.0)
         
@@ -316,6 +361,10 @@ class AudioLoop:
         try:
             async with (client.aio.live.connect(model=MODEL, config=CONFIG) as session, asyncio.TaskGroup() as tg):
                 self.session = session
+                
+                # Play success sound to indicate successful API connection
+                print("Successfully connected to LLM API! Playing success sound...")
+                await asyncio.to_thread(play_sound_effect, "success", out_idx)
                 send_text_task = tg.create_task(self.send_text())
                 tg.create_task(self.send_realtime())
                 tg.create_task(self.listen_audio())
